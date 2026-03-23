@@ -16,7 +16,7 @@
     <groupId>com.incoin</groupId>
     <artifactId>demo</artifactId>
     <version>0.0.1-SNAPSHOT</version>
-    <n>demo</n>
+    <name>demo</name>
     <description>Multi-user Incoin backend proxy</description>
     <packaging>jar</packaging>
 
