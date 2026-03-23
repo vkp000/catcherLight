@@ -251,6 +251,23 @@ public class IncoinApiService {
         return Boolean.TRUE.equals(post("/api/order/cancel", body, headers).get("success"));
     }
 
+
+    // ── getOrderHistory ───────────────────────────────────────────────────────
+
+    @SuppressWarnings("unchecked")
+    public Map<String, Object> getOrderHistory(UserSession session, int page, int size) {
+        Map<String, Object> body = new LinkedHashMap<>();
+        body.put("page", page);
+        body.put("size", size);
+        body.put("data", Collections.emptyMap());
+        HttpHeaders headers = buildFullHeaders(
+                body, session.getClientKey(), session.getClientSecret(), session.getIncoinToken()
+        );
+        Map<String, Object> response = post("/api/order/list", body, headers);
+        if (!Boolean.TRUE.equals(response.get("success"))) return Collections.emptyMap();
+        return response;
+    }
+
     // ── logout ────────────────────────────────────────────────────────────────
 
     public void logout(UserSession session) {

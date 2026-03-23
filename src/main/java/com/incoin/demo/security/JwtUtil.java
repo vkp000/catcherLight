@@ -15,33 +15,33 @@ import java.util.Date;
 public class JwtUtil {
 
     private final SecretKey secretKey;
-    private final long expiryMs;
+    private final long expiryMs; // supports fractional hours e.g. 0.5 = 30min
 
     public JwtUtil(
-        @Value("${app.jwt.secret}") String secret,
-        @Value("${app.jwt.expiry-hours}") long expiryHours
+            @Value("${app.jwt.secret}") String secret,
+            @Value("${app.jwt.expiry-hours}") double expiryHours
     ) {
         this.secretKey = Keys.hmacShaKeyFor(secret.getBytes(StandardCharsets.UTF_8));
-        this.expiryMs  = expiryHours * 3600L * 1000L;
+        this.expiryMs  = (long)(expiryHours * 3600L * 1000L);
     }
 
     /** Generate a signed JWT whose subject is the internal userId. */
     public String generate(String userId) {
         return Jwts.builder()
-            .subject(userId)
-            .issuedAt(new Date())
-            .expiration(new Date(System.currentTimeMillis() + expiryMs))
-            .signWith(secretKey)
-            .compact();
+                .subject(userId)
+                .issuedAt(new Date())
+                .expiration(new Date(System.currentTimeMillis() + expiryMs))
+                .signWith(secretKey)
+                .compact();
     }
 
     /** Extract the userId (subject) from a valid token. Throws on invalid/expired. */
     public String extractUserId(String token) {
         Claims claims = Jwts.parser()
-            .verifyWith(secretKey)
-            .build()
-            .parseSignedClaims(token)
-            .getPayload();
+                .verifyWith(secretKey)
+                .build()
+                .parseSignedClaims(token)
+                .getPayload();
         return claims.getSubject();
     }
 

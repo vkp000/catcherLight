@@ -1,5 +1,6 @@
 package com.incoin.demo.service;
 
+//import com.incoin.demo.db.service.CreditsService;
 import com.incoin.demo.model.GrabConfig;
 import com.incoin.demo.model.GrabState;
 import com.incoin.demo.model.UserSession;
@@ -27,16 +28,17 @@ import java.util.concurrent.Future;
 public class WorkerService {
 
     private final SessionService    sessionService;
+    private final CreditsService    creditsService;
     private final IncoinApiService  incoinApi;
     private final ExecutorService   grabExecutor;
     private final SimpMessagingTemplate wsTemplate;
 
     private static final DateTimeFormatter TIME_FMT =
-        DateTimeFormatter.ofPattern("HH:mm:ss");
+            DateTimeFormatter.ofPattern("HH:mm:ss");
 
     /** One Future per userId. */
     private final ConcurrentHashMap<String, Future<?>> activeFutures =
-        new ConcurrentHashMap<>();
+            new ConcurrentHashMap<>();
 
     // ── Public API ────────────────────────────────────────────────────────────
 
@@ -61,7 +63,7 @@ public class WorkerService {
         Future<?> future = grabExecutor.submit(() -> runLoop(userId));
         activeFutures.put(userId, future);
         log.info("[{}] Grab worker started | target={} range=₹{}–₹{}",
-            userId, config.getTarget(), config.getMinAmount(), config.getMaxAmount());
+                userId, config.getTarget(), config.getMinAmount(), config.getMaxAmount());
     }
 
     /**
@@ -112,7 +114,7 @@ public class WorkerService {
 
                 round++;
                 appendLog(userId, "MUTED",
-                    "── Round " + round + " — fetching order pool...");
+                        "── Round " + round + " — fetching order pool...");
 
                 // ── Fetch order list ───────────────────────────────────────
                 List<Map<String, Object>> orders;
@@ -150,7 +152,7 @@ public class WorkerService {
                     if (!sessionService.addProcessedId(userId, orderId)) continue;
 
                     appendLog(userId, "INFO",
-                        String.format("Attempting ₹%.2f · %s", amount, orderId));
+                            String.format("Attempting ₹%.2f · %s", amount, orderId));
 
                     // ── Grab attempt ───────────────────────────────────────
                     boolean grabbed = false;
@@ -158,7 +160,7 @@ public class WorkerService {
                         grabbed = incoinApi.grabOrder(session, orderId);
                     } catch (Exception e) {
                         appendLog(userId, "ERROR",
-                            "grabOrder error [" + orderId + "]: " + e.getMessage());
+                                "grabOrder error [" + orderId + "]: " + e.getMessage());
                         log.warn("[{}] grabOrder exception for {}", userId, orderId, e);
                     }
 
@@ -167,14 +169,21 @@ public class WorkerService {
                         sessionService.updateGrabState(userId, s -> {
                             s.setGrabbed(s.getGrabbed() + 1);
                             s.getLogs().add(fmt("SUCCESS",
-                                String.format("✓ Grabbed ₹%.2f · %d/%d",
-                                    amt, s.getGrabbed(), s.getTarget())));
+                                    String.format("✓ Grabbed ₹%.2f · %d/%d",
+                                            amt, s.getGrabbed(), s.getTarget())));
                         });
+                        // Save to DB + deduct credit
+                        try {
+                            creditsService.saveGrabbedOrder(userId, orderId);
+                            creditsService.deductCredit(userId);
+                        } catch (Exception e) {
+                            log.warn("[{}] Could not save grabbed order to DB: {}", userId, e.getMessage());
+                        }
                         roundHits++;
                         pushWs(userId);
                     } else {
                         appendLog(userId, "WARN",
-                            "✗ Grab rejected for orderId=" + orderId);
+                                "✗ Grab rejected for orderId=" + orderId);
                     }
                 } // end for-each order
 
@@ -217,8 +226,8 @@ public class WorkerService {
                 state.setRunning(false);
                 state.setStatus(done ? "DONE" : "STOPPED");
                 String msg = done
-                    ? "✓ All " + state.getTarget() + " orders grabbed!"
-                    : "Stopped — " + state.getGrabbed() + "/" + state.getTarget() + " grabbed";
+                        ? "✓ All " + state.getTarget() + " orders grabbed!"
+                        : "Stopped — " + state.getGrabbed() + "/" + state.getTarget() + " grabbed";
                 state.getLogs().add(fmt(done ? "SUCCESS" : "WARN", msg));
             });
         } catch (Exception e) {
@@ -244,14 +253,14 @@ public class WorkerService {
 
     private String fmt(String level, String msg) {
         return String.format("[%s][%s] %s",
-            LocalTime.now().format(TIME_FMT), level, msg);
+                LocalTime.now().format(TIME_FMT), level, msg);
     }
 
     private void pushWs(String userId) {
         try {
             UserSession session = sessionService.getOrThrow(userId);
             wsTemplate.convertAndSendToUser(
-                userId, "/queue/grab-status", session.getGrabState()
+                    userId, "/queue/grab-status", session.getGrabState()
             );
         } catch (Exception e) {
             log.debug("[{}] WebSocket push skipped: {}", userId, e.getMessage());
