@@ -1,4 +1,4 @@
-//package com.incoin.demo.service;
+package com.incoin.demo.service;//package com.incoin.demo.service;
 //
 //import com.incoin.demo.model.CaptchaResult;
 //import com.incoin.demo.model.UserSession;
@@ -17,6 +17,7 @@
 //import javax.crypto.spec.SecretKeySpec;
 //import java.nio.charset.StandardCharsets;
 //import java.util.*;
+import java.util.List;
 //import java.util.stream.Collectors;
 //
 ///**
@@ -423,7 +424,7 @@
 
 
 
-package com.incoin.demo.service;
+//package com.incoin.demo.service;
 
 import com.incoin.demo.model.CaptchaResult;
 import com.incoin.demo.model.UserSession;
@@ -441,6 +442,7 @@ import javax.crypto.Mac;
 import javax.crypto.spec.SecretKeySpec;
 import java.nio.charset.StandardCharsets;
 import java.util.*;
+import java.util.List;
 import java.util.stream.Collectors;
 
 /**
@@ -463,6 +465,33 @@ public class IncoinApiService {
     @Value("${app.incoin.client-type}") private String clientType;
     @Value("${app.incoin.app-id}")      private String appId;
     @Value("${app.incoin.android-id}")  private String androidId;
+
+    // ── App list (for frontend dropdown) ────────────────────────────────────
+
+    /**
+     * Hardcoded list of available Incoin apps.
+     * Add more entries here as needed.
+     * Index 0, 1, 2... is what the frontend sends as appIndex.
+     */
+    private static final List<Map<String, Object>> AVAILABLE_APPS = List.of(
+            Map.of("name", "InCoin Pay",   "baseUrl", "https://api.incoinpay.net"),
+            Map.of("name", "InCoin Pay 2", "baseUrl", "https://api2.incoinpay.net")
+            // Add more apps here
+    );
+
+    public List<Map<String, Object>> getAvailableApps() {
+        return AVAILABLE_APPS;
+    }
+
+    public String getBaseUrlByIndex(int index) {
+        if (index < 0 || index >= AVAILABLE_APPS.size()) {
+            throw new ResponseStatusException(
+                    org.springframework.http.HttpStatus.BAD_REQUEST,
+                    "Invalid app index: " + index
+            );
+        }
+        return (String) AVAILABLE_APPS.get(index).get("baseUrl");
+    }
 
     // ── Base URL resolution ───────────────────────────────────────────────────
 

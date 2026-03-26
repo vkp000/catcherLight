@@ -6,7 +6,6 @@ import lombok.Data;
 @Data
 @AllArgsConstructor
 public class LoginResponse {
-    /** YOUR application JWT — NOT the Incoin token. */
-    private String token;
+    private String sessionId; // random UUID — no JWT
     private String userId;
 }

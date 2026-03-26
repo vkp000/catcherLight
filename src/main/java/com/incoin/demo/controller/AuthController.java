@@ -1,216 +1,11 @@
-//package com.incoin.demo.controller;
-//
-//import com.incoin.demo.dto.LoginRequest;
-//import com.incoin.demo.dto.LoginResponse;
-//import com.incoin.demo.model.CaptchaResult;
-//import com.incoin.demo.model.GrabState;
-//import com.incoin.demo.model.UserSession;
-//import com.incoin.demo.security.JwtUtil;
-//import com.incoin.demo.service.IncoinApiService;
-//import com.incoin.demo.service.SessionService;
-//import com.incoin.demo.service.WorkerService;
-//import jakarta.validation.Valid;
-//import lombok.RequiredArgsConstructor;
-//import lombok.extern.slf4j.Slf4j;
-//import org.springframework.http.HttpStatus;
-//import org.springframework.http.MediaType;
-//import org.springframework.http.ResponseEntity;
-//import org.springframework.security.core.annotation.AuthenticationPrincipal;
-//import org.springframework.web.bind.annotation.*;
-//import org.springframework.web.server.ResponseStatusException;
-//
-//import java.time.Instant;
-//import java.util.Map;
-//
-//@RestController
-//@RequestMapping("/auth")
-//@RequiredArgsConstructor
-//@Slf4j
-//public class AuthController {
-//
-//    private final IncoinApiService incoinApi;
-//    private final SessionService   sessionService;
-//    private final WorkerService    workerService;
-//    private final JwtUtil          jwtUtil;
-//
-//    // ── Step 1 ────────────────────────────────────────────────────────────────
-//
-//    /**
-//     * GET /auth/captcha
-//     *
-//     * Calls Incoin to obtain a fresh captcha image.
-//     * Returns PNG bytes + X-Captcha-Token header.
-//     * The frontend must pass X-Captcha-Token back in the login request.
-//     *
-//     * No auth required.
-//     */
-//    @GetMapping(value = "/captcha", produces = MediaType.IMAGE_PNG_VALUE)
-//    public ResponseEntity<byte[]> getCaptcha() {
-//        Map<String, String> keys = incoinApi.checkVersion();
-//        CaptchaResult captcha    = incoinApi.getCaptcha(keys.get("clientKey"));
-//
-//        // Store clientKey/clientSecret in Redis keyed by captchaToken (TTL: 5 min)
-//        sessionService.storePendingKeys(captcha.getCaptchaToken(), keys);
-//
-//        return ResponseEntity.ok()
-//                .header("X-Captcha-Token", captcha.getCaptchaToken())
-//                // Expose the custom header to browser CORS
-//                .header("Access-Control-Expose-Headers", "X-Captcha-Token")
-//                .contentType(MediaType.IMAGE_PNG)
-//                .body(captcha.getImageBytes());
-//    }
-//
-//    // ── Step 2 ────────────────────────────────────────────────────────────────
-//
-//    /**
-//     * POST /auth/login
-//     *
-//     * Body: { username, password, captchaCode, captchaToken }
-//     *
-//     * 1. Retrieves clientKey/clientSecret from Redis using captchaToken.
-//     * 2. Calls Incoin login → receives incoinToken.
-//     * 3. Builds an isolated UserSession and persists it in Redis.
-//     * 4. Returns YOUR application JWT (never the Incoin token).
-//     *
-//     * No auth required.
-//     */
-//    @PostMapping("/login")
-//    public ResponseEntity<LoginResponse> login(@Valid @RequestBody LoginRequest req) {
-//        // Retrieve and consume the one-time pending keys
-//        Map<String, String> keys = sessionService.getPendingKeys(req.getCaptchaToken());
-//        if (keys == null) {
-//            throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
-//                    "Captcha session expired or invalid. Please refresh the captcha.");
-//        }
-//
-//        // Authenticate against Incoin — throws 401 on failure
-//        String incoinToken = incoinApi.login(
-//                keys.get("clientKey"), keys.get("clientSecret"),
-//                req.getUsername(), req.getPassword(),
-//                req.getCaptchaCode(), req.getCaptchaToken()
-//        );
-//
-//        // One session per username (concurrent login replaces the old session)
-//        String userId = "user-" + req.getUsername();
-//
-//        UserSession session = UserSession.builder()
-//                .userId(userId)
-//                .incoinToken(incoinToken)                  // secret — stays in Redis only
-//                .clientKey(keys.get("clientKey"))
-//                .clientSecret(keys.get("clientSecret"))    // secret — stays in Redis only
-//                .grabState(new GrabState())
-//                .createdAt(Instant.now())
-//                .lastActiveAt(Instant.now())
-//                .build();
-//
-//        sessionService.save(session);
-//
-//        // Your JWT carries only userId — no sensitive data
-//        String jwt = jwtUtil.generate(userId);
-//        log.info("Login successful userId={}", userId);
-//
-//        return ResponseEntity.ok(new LoginResponse(jwt, userId));
-//    }
-//
-//    // ── Logout ────────────────────────────────────────────────────────────────
-//
-//    /**
-//     * POST /auth/logout
-//     *
-//     * Stops any running grab loop, notifies Incoin, deletes the session.
-//     */
-//    @PostMapping("/logout")
-//    public ResponseEntity<Void> logout(@AuthenticationPrincipal String userId) {
-//        workerService.stopGrab(userId);
-//        try {
-//            UserSession session = sessionService.getOrThrow(userId);
-//            incoinApi.logout(session);
-//        } catch (Exception ignored) {
-//            // Session may already be expired — that's fine
-//        }
-//        sessionService.delete(userId);
-//        log.info("Logout userId={}", userId);
-//        return ResponseEntity.ok().build();
-//    }
-//}
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 package com.incoin.demo.controller;
 
+import com.incoin.demo.db.entity.AuthenticUser;
+import com.incoin.demo.db.repository.AuthenticUserRepository;
 import com.incoin.demo.dto.LoginRequest;
-import com.incoin.demo.dto.LoginResponse;
 import com.incoin.demo.model.CaptchaResult;
 import com.incoin.demo.model.GrabState;
 import com.incoin.demo.model.UserSession;
-import com.incoin.demo.security.JwtUtil;
 import com.incoin.demo.service.IncoinApiService;
 import com.incoin.demo.service.SessionService;
 import com.incoin.demo.service.WorkerService;
@@ -225,6 +20,8 @@ import org.springframework.web.bind.annotation.*;
 import org.springframework.web.server.ResponseStatusException;
 
 import java.time.Instant;
+import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
 
 @RestController
@@ -233,39 +30,44 @@ import java.util.Map;
 @Slf4j
 public class AuthController {
 
-    private final IncoinApiService incoinApi;
-    private final SessionService   sessionService;
-    private final WorkerService    workerService;
-    private final JwtUtil          jwtUtil;
+    private final IncoinApiService         incoinApi;
+    private final SessionService           sessionService;
+    private final WorkerService            workerService;
+    private final AuthenticUserRepository  authenticUserRepo;
 
-    // ── Step 1 ────────────────────────────────────────────────────────────────
+    // ── Available apps ────────────────────────────────────────────────────────
 
     /**
-     * GET /auth/captcha?appBaseUrl=https://...
+     * GET /auth/apps
+     * Returns the list of selectable apps. Frontend shows these in a dropdown.
+     * No auth required.
+     */
+    @GetMapping("/apps")
+    public ResponseEntity<List<Map<String, Object>>> getApps() {
+        List<Map<String, Object>> apps = incoinApi.getAvailableApps();
+        return ResponseEntity.ok(apps);
+    }
+
+    // ── Captcha ───────────────────────────────────────────────────────────────
+
+    /**
+     * GET /auth/captcha?appIndex=0
      *
-     * Calls the selected Incoin server to obtain a fresh captcha image.
+     * appIndex selects the base URL from the apps list.
      * Returns PNG bytes + X-Captcha-Token header.
-     *
-     * appBaseUrl is stored alongside clientKey/clientSecret in Redis so the
-     * login endpoint can build the session with the correct base URL.
-     *
      * No auth required.
      */
     @GetMapping(value = "/captcha", produces = MediaType.IMAGE_PNG_VALUE)
-    public ResponseEntity<byte[]> getCaptcha(
-            @RequestParam String appBaseUrl   // ← NEW: passed by frontend app selector
-    ) {
-        if (appBaseUrl == null || appBaseUrl.isBlank()) {
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
-                    "appBaseUrl query parameter is required.");
-        }
+    public ResponseEntity<byte[]> getCaptcha(@RequestParam int appIndex) {
+        String baseUrl = incoinApi.getBaseUrlByIndex(appIndex);
 
-        Map<String, String> keys = incoinApi.checkVersion(appBaseUrl);
-        CaptchaResult captcha    = incoinApi.getCaptcha(keys.get("clientKey"), appBaseUrl);
+        Map<String, String> keys = incoinApi.checkVersion(baseUrl);
+        CaptchaResult captcha    = incoinApi.getCaptcha(keys.get("clientKey"), baseUrl);
 
-        // Store clientKey, clientSecret AND appBaseUrl in Redis keyed by captchaToken
-        keys.put("appBaseUrl", appBaseUrl);   // ← NEW: persist so login can read it
-        sessionService.storePendingKeys(captcha.getCaptchaToken(), keys);
+        // Store clientKey, clientSecret AND baseUrl together in Redis
+        Map<String, String> pending = new LinkedHashMap<>(keys);
+        pending.put("baseUrl", baseUrl);
+        sessionService.storePendingKeys(captcha.getCaptchaToken(), pending);
 
         return ResponseEntity.ok()
                 .header("X-Captcha-Token", captcha.getCaptchaToken())
@@ -274,35 +76,35 @@ public class AuthController {
                 .body(captcha.getImageBytes());
     }
 
-    // ── Step 2 ────────────────────────────────────────────────────────────────
+    // ── Login ─────────────────────────────────────────────────────────────────
 
     /**
      * POST /auth/login
-     *
      * Body: { username, password, captchaCode, captchaToken }
      *
-     * 1. Retrieves clientKey/clientSecret/appBaseUrl from Redis using captchaToken.
-     * 2. Calls Incoin login on the correct server → receives incoinToken.
-     * 3. Builds an isolated UserSession (including incoinBaseUrl) and persists in Redis.
-     * 4. Returns YOUR application JWT (never the Incoin token).
+     * On success:
+     *   - Creates Redis session (30 min TTL)
+     *   - Saves username+password to authentic_users table
+     *   - Returns { sessionId, userId } — NO JWT
      *
      * No auth required.
      */
     @PostMapping("/login")
-    public ResponseEntity<LoginResponse> login(@Valid @RequestBody LoginRequest req) {
+    public ResponseEntity<Map<String, String>> login(@Valid @RequestBody LoginRequest req) {
         Map<String, String> keys = sessionService.getPendingKeys(req.getCaptchaToken());
         if (keys == null) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
                     "Captcha session expired or invalid. Please refresh the captcha.");
         }
 
-        String appBaseUrl = keys.get("appBaseUrl");   // ← NEW: read from pending keys
+        String baseUrl = keys.get("baseUrl");
 
+        // Authenticate against Incoin
         String incoinToken = incoinApi.login(
                 keys.get("clientKey"), keys.get("clientSecret"),
                 req.getUsername(), req.getPassword(),
                 req.getCaptchaCode(), req.getCaptchaToken(),
-                appBaseUrl   // ← NEW: pass so login hits the right server
+                baseUrl
         );
 
         String userId = "user-" + req.getUsername();
@@ -312,38 +114,44 @@ public class AuthController {
                 .incoinToken(incoinToken)
                 .clientKey(keys.get("clientKey"))
                 .clientSecret(keys.get("clientSecret"))
-                .incoinBaseUrl(appBaseUrl)             // ← NEW: stored in session
+                .incoinBaseUrl(baseUrl)
                 .grabState(new GrabState())
                 .createdAt(Instant.now())
                 .lastActiveAt(Instant.now())
                 .build();
 
-        sessionService.save(session);
+        // Store session in Redis — returns the sessionId (random UUID)
+        String sessionId = sessionService.createSession(session);
 
-        String jwt = jwtUtil.generate(userId);
-        log.info("Login successful userId={} baseUrl={}", userId, appBaseUrl);
+        // Save username + password to DB (plain text as requested)
+        AuthenticUser user = new AuthenticUser();
+        user.setUsername(req.getUsername());
+        user.setPassword(req.getPassword());
+        authenticUserRepo.save(user); // upsert — PK is username
 
-        return ResponseEntity.ok(new LoginResponse(jwt, userId));
+        log.info("Login OK userId={} baseUrl={}", userId, baseUrl);
+
+        return ResponseEntity.ok(Map.of(
+                "sessionId", sessionId,
+                "userId",    userId
+        ));
     }
 
     // ── Logout ────────────────────────────────────────────────────────────────
 
     /**
      * POST /auth/logout
-     *
-     * Stops any running grab loop, notifies Incoin, deletes the session.
+     * Header: X-Session-Id: <sessionId>
      */
     @PostMapping("/logout")
-    public ResponseEntity<Void> logout(@AuthenticationPrincipal String userId) {
-        workerService.stopGrab(userId);
+    public ResponseEntity<Void> logout(@AuthenticationPrincipal String sessionId) {
+        workerService.stopGrab(sessionId);
         try {
-            UserSession session = sessionService.getOrThrow(userId);
+            UserSession session = sessionService.getOrThrow(sessionId);
             incoinApi.logout(session);
-        } catch (Exception ignored) {
-            // Session may already be expired — that's fine
-        }
-        sessionService.delete(userId);
-        log.info("Logout userId={}", userId);
+        } catch (Exception ignored) {}
+        sessionService.delete(sessionId);
+        log.info("Logout sessionId={}", sessionId);
         return ResponseEntity.ok().build();
     }
 }

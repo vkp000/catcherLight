@@ -15,6 +15,7 @@ import java.time.Instant;
 import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.Optional;
+import java.util.UUID;
 import java.util.function.Consumer;
 
 @Service
@@ -28,85 +29,88 @@ public class SessionService {
     private static final String SESSION_PREFIX = "session:";
     private static final String PENDING_PREFIX = "pending:";
 
-    private static final Duration SESSION_TTL = Duration.ofHours(2);
-    private static final Duration PENDING_TTL  = Duration.ofMinutes(5);
+    // 30 minutes session TTL as requested
+    private static final Duration SESSION_TTL = Duration.ofMinutes(30);
+    private static final Duration PENDING_TTL = Duration.ofMinutes(5);
 
-    // ── User Session ──────────────────────────────────────────────────────────
+    // ── Session CRUD ──────────────────────────────────────────────────────────
 
-    public void save(UserSession session) {
+    /**
+     * Create a new session, store in Redis, return the sessionId.
+     * sessionId is a random UUID — used as the auth token sent to frontend.
+     */
+    public String createSession(UserSession session) {
+        String sessionId = UUID.randomUUID().toString();
         session.setLastActiveAt(Instant.now());
-        redisTemplate.opsForValue().set(
-                SESSION_PREFIX + session.getUserId(), session, SESSION_TTL
-        );
-        log.debug("Session saved userId={}", session.getUserId());
+        redisTemplate.opsForValue().set(SESSION_PREFIX + sessionId, session, SESSION_TTL);
+        log.debug("Session created sessionId={} userId={}", sessionId, session.getUserId());
+        return sessionId;
     }
 
-    public Optional<UserSession> find(String userId) {
-        Object raw = redisTemplate.opsForValue().get(SESSION_PREFIX + userId);
+    public void save(UserSession session, String sessionId) {
+        session.setLastActiveAt(Instant.now());
+        redisTemplate.opsForValue().set(SESSION_PREFIX + sessionId, session, SESSION_TTL);
+    }
+
+    public Optional<UserSession> find(String sessionId) {
+        Object raw = redisTemplate.opsForValue().get(SESSION_PREFIX + sessionId);
         if (raw == null) return Optional.empty();
         UserSession session = toUserSession(raw);
-        redisTemplate.expire(SESSION_PREFIX + userId, SESSION_TTL);
+        // Slide TTL on each access
+        redisTemplate.expire(SESSION_PREFIX + sessionId, SESSION_TTL);
         return Optional.of(session);
     }
 
-    public UserSession getOrThrow(String userId) {
-        return find(userId).orElseThrow(() ->
+    public UserSession getOrThrow(String sessionId) {
+        return find(sessionId).orElseThrow(() ->
                 new ResponseStatusException(HttpStatus.UNAUTHORIZED,
                         "Session expired or not found. Please login again.")
         );
     }
 
-    public void delete(String userId) {
-        redisTemplate.delete(SESSION_PREFIX + userId);
-        log.info("Session deleted userId={}", userId);
+    public void delete(String sessionId) {
+        redisTemplate.delete(SESSION_PREFIX + sessionId);
+        log.info("Session deleted sessionId={}", sessionId);
     }
 
     // ── GrabState helpers ─────────────────────────────────────────────────────
 
-    public void updateGrabState(String userId, Consumer<GrabState> updater) {
-        UserSession session = getOrThrow(userId);
+    public void updateGrabState(String sessionId, Consumer<GrabState> updater) {
+        UserSession session = getOrThrow(sessionId);
         updater.accept(session.getGrabState());
-        save(session);
+        save(session, sessionId);
     }
 
-    public boolean addProcessedId(String userId, String orderId) {
-        UserSession session = getOrThrow(userId);
+    public boolean addProcessedId(String sessionId, String orderId) {
+        UserSession session = getOrThrow(sessionId);
         boolean added = session.getProcessedIds().add(orderId);
-        if (added) save(session);
+        if (added) save(session, sessionId);
         return added;
     }
 
     // ── Pending captcha keys ──────────────────────────────────────────────────
 
     public void storePendingKeys(String captchaToken, Map<String, String> keys) {
-        // Store as plain LinkedHashMap — GenericJackson2JsonRedisSerializer
-        // will embed @class info automatically.
         redisTemplate.opsForValue().set(
                 PENDING_PREFIX + captchaToken,
                 new LinkedHashMap<>(keys),
                 PENDING_TTL
         );
-        log.debug("Stored pending keys for captchaToken={}", captchaToken);
     }
 
     @SuppressWarnings("unchecked")
     public Map<String, String> getPendingKeys(String captchaToken) {
         String key = PENDING_PREFIX + captchaToken;
         Object raw = redisTemplate.opsForValue().get(key);
-        if (raw == null) {
-            log.warn("No pending keys found for captchaToken={}", captchaToken);
-            return null;
-        }
-        redisTemplate.delete(key); // one-time use
-        // Convert whatever Jackson deserialized back to Map<String,String>
+        if (raw == null) return null;
+        redisTemplate.delete(key);
         return toStringMap(raw);
     }
 
-    // ── Type-safe conversion helpers ──────────────────────────────────────────
+    // ── Type helpers ──────────────────────────────────────────────────────────
 
     private UserSession toUserSession(Object raw) {
         if (raw instanceof UserSession s) return s;
-        // Jackson may deserialize as LinkedHashMap when type info is missing
         return objectMapper.convertValue(raw, UserSession.class);
     }
 
@@ -114,9 +118,7 @@ public class SessionService {
     private Map<String, String> toStringMap(Object raw) {
         if (raw instanceof Map<?, ?> m) {
             Map<String, String> result = new LinkedHashMap<>();
-            m.forEach((k, v) -> {
-                if (k != null && v != null) result.put(k.toString(), v.toString());
-            });
+            m.forEach((k, v) -> { if (k != null && v != null) result.put(k.toString(), v.toString()); });
             return result;
         }
         return objectMapper.convertValue(raw, Map.class);
