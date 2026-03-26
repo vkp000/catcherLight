@@ -476,7 +476,7 @@ public class IncoinApiService {
      */
     private static final List<Map<String, Object>> AVAILABLE_APPS = List.of(
             Map.of("name", "InCoin Pay",   "baseUrl", "https://api.incoinpay.net"),
-            Map.of("name", "InCoin Pay 2", "baseUrl", "https://api2.incoinpay.net")
+            Map.of("name", "second one", "baseUrl", "https://nine99pay.com")
             // Add more apps here
     );
 
