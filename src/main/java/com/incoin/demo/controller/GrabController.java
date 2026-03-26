@@ -61,7 +61,7 @@ public class GrabController {
         session.setSelectedUpiAddr(req.getUpiAddr());
         session.setSelectedToolType(req.getToolType());
         session.setSelectedToolName(req.getToolName());
-        sessionService.save(session);
+        sessionService.save(session, userId);
         return ResponseEntity.ok().build();
     }
 
