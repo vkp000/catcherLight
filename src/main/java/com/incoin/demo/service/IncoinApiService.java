@@ -469,6 +469,7 @@ public class IncoinApiService {
     // ── App list (for frontend dropdown) ────────────────────────────────────
 
     /**
+     *
      * Hardcoded list of available Incoin apps.
      * Add more entries here as needed.
      * Index 0, 1, 2... is what the frontend sends as appIndex.
