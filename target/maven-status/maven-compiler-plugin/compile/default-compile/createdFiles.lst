@@ -1,0 +1,5 @@
+com\incoin\demo\config\ExecutorConfig.class
+com\incoin\demo\DemoApplication.class
+com\incoin\demo\config\RedisConfig.class
+com\incoin\demo\config\JacksonConfig.class
+com\incoin\demo\config\RestTemplateConfig.class

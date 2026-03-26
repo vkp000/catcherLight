@@ -21,6 +21,7 @@ import java.util.List;
 @RequiredArgsConstructor
 public class SecurityConfig {
 
+
     private final SessionAuthFilter sessionAuthFilter;
 
     @Bean
