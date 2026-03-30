@@ -7,6 +7,8 @@ import com.incoin.demo.model.GrabState;
 import com.incoin.demo.model.UserSession;
 import com.incoin.demo.service.IncoinApiService;
 import com.incoin.demo.service.SessionService;
+//import com.incoin.demo.db.service.SubscriptionService;
+import com.incoin.demo.service.SubscriptionService;
 import com.incoin.demo.service.WorkerService;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
@@ -30,7 +32,8 @@ public class GrabController {
 
     private final SessionService   sessionService;
     private final IncoinApiService incoinApi;
-    private final WorkerService    workerService;
+    private final WorkerService       workerService;
+    private final com.incoin.demo.service.SubscriptionService subscriptionService;
 
     // ── Tools ─────────────────────────────────────────────────────────────────
 
@@ -40,7 +43,7 @@ public class GrabController {
      */
     @GetMapping("/tools")
     public ResponseEntity<List<Map<String, Object>>> getTools(
-        @AuthenticationPrincipal String userId
+            @AuthenticationPrincipal String userId
     ) {
         UserSession session = sessionService.getOrThrow(userId);
         return ResponseEntity.ok(incoinApi.getTools(session));
@@ -54,8 +57,8 @@ public class GrabController {
      */
     @PostMapping("/tool")
     public ResponseEntity<Void> selectTool(
-        @AuthenticationPrincipal String userId,
-        @Valid @RequestBody SelectToolRequest req
+            @AuthenticationPrincipal String userId,
+            @Valid @RequestBody SelectToolRequest req
     ) {
         UserSession session = sessionService.getOrThrow(userId);
         session.setSelectedUpiAddr(req.getUpiAddr());
@@ -76,22 +79,29 @@ public class GrabController {
      */
     @PostMapping("/start")
     public ResponseEntity<Void> start(
-        @AuthenticationPrincipal String userId,
-        @Valid @RequestBody StartGrabRequest req
+            @AuthenticationPrincipal String userId,
+            @Valid @RequestBody StartGrabRequest req
     ) {
         UserSession session = sessionService.getOrThrow(userId);
 
         if (session.getSelectedUpiAddr() == null || session.getSelectedUpiAddr().isBlank()) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
-                "No tool selected. Call POST /grab/tool first.");
+                    "No tool selected. Call POST /grab/tool first.");
         }
         if (req.getMinAmount() >= req.getMaxAmount()) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
-                "minAmount must be less than maxAmount.");
+                    "minAmount must be less than maxAmount.");
+        }
+
+        // Credits check — must have credits > 0 to grab
+        int credits = subscriptionService.getCredits(session.getUserId());
+        if (credits <= 0) {
+            throw new ResponseStatusException(HttpStatus.PAYMENT_REQUIRED,
+                    "No credits remaining. Please redeem a coupon.");
         }
 
         workerService.startGrab(userId,
-            new GrabConfig(req.getMinAmount(), req.getMaxAmount(), req.getTarget()));
+                new GrabConfig(req.getMinAmount(), req.getMaxAmount(), req.getTarget()));
 
         return ResponseEntity.ok().build();
     }
@@ -117,7 +127,7 @@ public class GrabController {
      */
     @GetMapping("/status")
     public ResponseEntity<GrabState> status(
-        @AuthenticationPrincipal String userId
+            @AuthenticationPrincipal String userId
     ) {
         UserSession session = sessionService.getOrThrow(userId);
         return ResponseEntity.ok(session.getGrabState());

@@ -2,6 +2,7 @@ package com.incoin.demo.controller;
 
 import com.incoin.demo.db.entity.AuthenticUser;
 import com.incoin.demo.db.repository.AuthenticUserRepository;
+import com.incoin.demo.db.service.SubscriptionService;
 import com.incoin.demo.dto.LoginRequest;
 import com.incoin.demo.model.CaptchaResult;
 import com.incoin.demo.model.GrabState;
@@ -30,33 +31,21 @@ import java.util.Map;
 @Slf4j
 public class AuthController {
 
-    private final IncoinApiService         incoinApi;
-    private final SessionService           sessionService;
-    private final WorkerService            workerService;
-    private final AuthenticUserRepository  authenticUserRepo;
+    private final IncoinApiService        incoinApi;
+    private final SessionService          sessionService;
+    private final WorkerService           workerService;
+    private final AuthenticUserRepository authenticUserRepo;
+    private final SubscriptionService     subscriptionService;
 
     // ── Available apps ────────────────────────────────────────────────────────
 
-    /**
-     * GET /auth/apps
-     * Returns the list of selectable apps. Frontend shows these in a dropdown.
-     * No auth required.
-     */
     @GetMapping("/apps")
     public ResponseEntity<List<Map<String, Object>>> getApps() {
-        List<Map<String, Object>> apps = incoinApi.getAvailableApps();
-        return ResponseEntity.ok(apps);
+        return ResponseEntity.ok(incoinApi.getAvailableApps());
     }
 
     // ── Captcha ───────────────────────────────────────────────────────────────
 
-    /**
-     * GET /auth/captcha?appIndex=0
-     *
-     * appIndex selects the base URL from the apps list.
-     * Returns PNG bytes + X-Captcha-Token header.
-     * No auth required.
-     */
     @GetMapping(value = "/captcha", produces = MediaType.IMAGE_PNG_VALUE)
     public ResponseEntity<byte[]> getCaptcha(@RequestParam int appIndex) {
         String baseUrl = incoinApi.getBaseUrlByIndex(appIndex);
@@ -64,7 +53,6 @@ public class AuthController {
         Map<String, String> keys = incoinApi.checkVersion(baseUrl);
         CaptchaResult captcha    = incoinApi.getCaptcha(keys.get("clientKey"), baseUrl);
 
-        // Store clientKey, clientSecret AND baseUrl together in Redis
         Map<String, String> pending = new LinkedHashMap<>(keys);
         pending.put("baseUrl", baseUrl);
         sessionService.storePendingKeys(captcha.getCaptchaToken(), pending);
@@ -80,17 +68,15 @@ public class AuthController {
 
     /**
      * POST /auth/login
-     * Body: { username, password, captchaCode, captchaToken }
      *
      * On success:
-     *   - Creates Redis session (30 min TTL)
-     *   - Saves username+password to authentic_users table
-     *   - Returns { sessionId, userId } — NO JWT
-     *
-     * No auth required.
+     *  1. Authenticates with Incoin
+     *  2. Runs algo1 ONCE to reconcile credited orders
+     *  3. Fetches remaining credits from DB
+     *  4. Returns { sessionId, userId, credits }
      */
     @PostMapping("/login")
-    public ResponseEntity<Map<String, String>> login(@Valid @RequestBody LoginRequest req) {
+    public ResponseEntity<Map<String, Object>> login(@Valid @RequestBody LoginRequest req) {
         Map<String, String> keys = sessionService.getPendingKeys(req.getCaptchaToken());
         if (keys == null) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
@@ -99,7 +85,7 @@ public class AuthController {
 
         String baseUrl = keys.get("baseUrl");
 
-        // Authenticate against Incoin
+        // Authenticate with Incoin
         String incoinToken = incoinApi.login(
                 keys.get("clientKey"), keys.get("clientSecret"),
                 req.getUsername(), req.getPassword(),
@@ -120,29 +106,37 @@ public class AuthController {
                 .lastActiveAt(Instant.now())
                 .build();
 
-        // Store session in Redis — returns the sessionId (random UUID)
         String sessionId = sessionService.createSession(session);
 
-        // Save username + password to DB (plain text as requested)
+        // Save credentials to DB
         AuthenticUser user = new AuthenticUser();
         user.setUsername(req.getUsername());
         user.setPassword(req.getPassword());
-        authenticUserRepo.save(user); // upsert — PK is username
+        authenticUserRepo.save(user);
 
-        log.info("Login OK userId={} baseUrl={}", userId, baseUrl);
+        // Run algo1 ONCE — reconcile credited orders, deduct from subscription
+        // Session must be saved first so algo1 can use it for Incoin API calls
+        int deducted = 0;
+        try {
+            deducted = subscriptionService.runAlgo1AtLogin(userId, session);
+        } catch (Exception e) {
+            log.warn("algo1 failed at login for userId={}: {}", userId, e.getMessage());
+        }
 
-        return ResponseEntity.ok(Map.of(
-                "sessionId", sessionId,
-                "userId",    userId
-        ));
+        // Fetch final credits after algo1
+        int credits = subscriptionService.getCredits(userId);
+
+        log.info("Login OK userId={} credits={} algo1Deducted={}", userId, credits, deducted);
+
+        Map<String, Object> resp = new LinkedHashMap<>();
+        resp.put("sessionId", sessionId);
+        resp.put("userId",    userId);
+        resp.put("credits",   credits);
+        return ResponseEntity.ok(resp);
     }
 
     // ── Logout ────────────────────────────────────────────────────────────────
 
-    /**
-     * POST /auth/logout
-     * Header: X-Session-Id: <sessionId>
-     */
     @PostMapping("/logout")
     public ResponseEntity<Void> logout(@AuthenticationPrincipal String sessionId) {
         workerService.stopGrab(sessionId);
