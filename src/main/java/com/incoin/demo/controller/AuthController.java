@@ -2,13 +2,14 @@ package com.incoin.demo.controller;
 
 import com.incoin.demo.db.entity.AuthenticUser;
 import com.incoin.demo.db.repository.AuthenticUserRepository;
-import com.incoin.demo.db.service.SubscriptionService;
+//import com.incoin.demo.db.service.SubscriptionService;
 import com.incoin.demo.dto.LoginRequest;
 import com.incoin.demo.model.CaptchaResult;
 import com.incoin.demo.model.GrabState;
 import com.incoin.demo.model.UserSession;
 import com.incoin.demo.service.IncoinApiService;
 import com.incoin.demo.service.SessionService;
+import com.incoin.demo.service.SubscriptionService;
 import com.incoin.demo.service.WorkerService;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
@@ -35,7 +36,7 @@ public class AuthController {
     private final SessionService          sessionService;
     private final WorkerService           workerService;
     private final AuthenticUserRepository authenticUserRepo;
-    private final SubscriptionService     subscriptionService;
+    private final SubscriptionService subscriptionService;
 
     // ── Available apps ────────────────────────────────────────────────────────
 
