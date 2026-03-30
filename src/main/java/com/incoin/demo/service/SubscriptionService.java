@@ -7,7 +7,7 @@ import com.incoin.demo.db.repository.CouponRepository;
 import com.incoin.demo.db.repository.SubscriptionRepository;
 import com.incoin.demo.db.repository.UsingServiceRepository;
 import com.incoin.demo.model.UserSession;
-import com.incoin.demo.service.IncoinApiService;
+//import com.incoin.demo.service.IncoinApiService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpStatus;
