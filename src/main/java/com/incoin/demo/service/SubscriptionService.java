@@ -190,4 +190,18 @@ public class SubscriptionService {
         result.put("totalCredits", sub.getCredits());
         return result;
     }
+
+
+    // ── Auto-register new user with free credits ──────────────────────────────
+
+    @Transactional
+    public void initUserIfAbsent(String userId, int defaultCredits) {
+        if (subscriptionRepo.findByUserId(userId).isEmpty()) {
+            Subscription sub = new Subscription();
+            sub.setUserId(userId);
+            sub.setCredits(defaultCredits);
+            subscriptionRepo.save(sub);
+            log.info("New subscription created userId={} credits={}", userId, defaultCredits);
+        }
+    }
 }

@@ -115,6 +115,11 @@ public class AuthController {
         user.setPassword(req.getPassword());
         authenticUserRepo.save(user);
 
+        // Auto-register new users with 3 free credits
+        subscriptionService.initUserIfAbsent(userId, 3);
+
+
+
         // Run algo1 ONCE — reconcile credited orders, deduct from subscription
         // Session must be saved first so algo1 can use it for Incoin API calls
         int deducted = 0;
