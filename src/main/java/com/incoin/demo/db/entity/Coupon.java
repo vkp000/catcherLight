@@ -16,4 +16,7 @@ public class Coupon {
 
     @Column(name = "user_id")
     private String userId; // null = unclaimed
+
+    @Column(name = "value")
+    private Integer value;
 }

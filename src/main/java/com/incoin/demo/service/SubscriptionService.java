@@ -166,6 +166,9 @@ public class SubscriptionService {
                     "Coupon is already claimed or does not exist.");
         }
 
+        // Read credit value from coupon itself
+        int creditsToAdd = coupon.getValue() != null ? coupon.getValue() : 0;
+
         // Claim coupon
         coupon.setUserId(userId);
         couponRepo.save(coupon);
@@ -177,16 +180,16 @@ public class SubscriptionService {
         if (sub == null) {
             sub = new Subscription();
             sub.setUserId(userId);
-            sub.setCredits(CREDITS_PER_COUPON);
+            sub.setCredits(creditsToAdd);
         } else {
             oldCredits = sub.getCredits();
-            sub.setCredits(oldCredits + CREDITS_PER_COUPON);
+            sub.setCredits(oldCredits + creditsToAdd);
         }
         subscriptionRepo.save(sub);
 
         Map<String, Object> result = new LinkedHashMap<>();
         result.put("oldCredits",   oldCredits);
-        result.put("addedCredits", CREDITS_PER_COUPON);
+        result.put("addedCredits", creditsToAdd);
         result.put("totalCredits", sub.getCredits());
         return result;
     }
