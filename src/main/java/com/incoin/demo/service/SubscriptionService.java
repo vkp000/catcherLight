@@ -26,11 +26,15 @@ public class SubscriptionService {
     private final CouponRepository       couponRepo;
     private final IncoinApiService       incoinApi;
 
+    // ── Get current credits ───────────────────────────────────────────────────
+
     public int getCredits(String userId) {
         return subscriptionRepo.findByUserId(userId)
                 .map(Subscription::getCredits)
                 .orElse(0);
     }
+
+    // ── Auto-register new user with free credits ──────────────────────────────
 
     @Transactional
     public void initUserIfAbsent(String userId, int defaultCredits) {
@@ -43,76 +47,68 @@ public class SubscriptionService {
         }
     }
 
+    // ── Algo1 — ONLY at login ─────────────────────────────────────────────────
+    //
+    // 1. using_service se saare rows lo jahan userId match kare aur credited = 'n'
+    // 2. Har order ka status Incoin se fetch karo
+    // 3. Jo orders status == 2 hain (confirmed) → credited = 'y' mark karo
+    // 4. Count ke hisaab se subscription credits deduct karo
+
     @Transactional
     public int runAlgo1AtLogin(String userId, UserSession session) {
 
-        List<UsingService> groupA = usingServiceRepo.findByUserIdAndCredited(userId, "n");
-        if (groupA.isEmpty()) {
-            log.debug("algo1[{}]: no uncredited orders — skipping", userId);
+        // Step 1 — fetch all uncredited orders for this user
+        List<UsingService> uncredited = usingServiceRepo.findByUserIdAndCredited(userId, "n");
+
+        if (uncredited.isEmpty()) {
+            log.debug("algo1[{}]: no uncredited orders, nothing to do", userId);
             return 0;
         }
 
-        Set<String>               remaining = new HashSet<>();
-        Map<String, UsingService> entryMap  = new HashMap<>();
-        for (UsingService e : groupA) {
-            remaining.add(e.getOrderId());
-            entryMap.put(e.getOrderId(), e);
-        }
+        log.debug("algo1[{}]: {} uncredited orders found, checking with Incoin", userId, uncredited.size());
 
-        Set<String> creditedOnIncoin = new HashSet<>();
-        int page = 1;
+        // Step 2 & 3 — check each order status from Incoin
+        List<UsingService> toCredit = new ArrayList<>();
 
-        while (!remaining.isEmpty() && page <= 20) {
+        for (UsingService entry : uncredited) {
             try {
-                Map<String, Object> resp = incoinApi.getOrderHistory(session, page, 50);
+                Map<String, Object> detail = incoinApi.getOrderDetail(session, entry.getOrderId());
+                Object statusObj = detail.get("status");
+                int status = statusObj instanceof Number ? ((Number) statusObj).intValue() : -1;
 
-                @SuppressWarnings("unchecked")
-                Map<String, Object> data = (Map<String, Object>)
-                        resp.getOrDefault("data", Collections.emptyMap());
-
-                @SuppressWarnings("unchecked")
-                List<Map<String, Object>> orders = (List<Map<String, Object>>)
-                        data.getOrDefault("list", Collections.emptyList());
-
-                if (orders == null || orders.isEmpty()) break;
-
-                for (Map<String, Object> order : orders) {
-                    String oid = (String) order.get("orderId");
-                    if (oid == null || !remaining.contains(oid)) continue;
-                    remaining.remove(oid);
-                    int statusInt = order.get("status") instanceof Number
-                            ? ((Number) order.get("status")).intValue() : -1;
-                    if (statusInt == 2) creditedOnIncoin.add(oid);
+                if (status == 2) {
+                    // Incoin confirmed this order — mark it
+                    entry.setCredited("y");
+                    toCredit.add(entry);
+                    log.debug("algo1[{}]: order {} confirmed credited", userId, entry.getOrderId());
                 }
-
-                Object totalObj = data.get("total");
-                int total = totalObj instanceof Number ? ((Number) totalObj).intValue() : 0;
-                if (page * 50 >= total) break;
-                page++;
-
-            } catch (Exception ex) {
-                log.warn("algo1[{}]: error on page {}: {}", userId, page, ex.getMessage());
-                break;
+            } catch (Exception e) {
+                log.warn("algo1[{}]: could not fetch order {}: {}", userId, entry.getOrderId(), e.getMessage());
             }
         }
 
-        if (creditedOnIncoin.isEmpty()) return 0;
-
-        for (String oid : creditedOnIncoin) {
-            UsingService entry = entryMap.get(oid);
-            entry.setCredited("y");
-            usingServiceRepo.save(entry);
+        if (toCredit.isEmpty()) {
+            log.debug("algo1[{}]: no orders newly confirmed by Incoin", userId);
+            return 0;
         }
 
-        int x = creditedOnIncoin.size();
+        // Step 3 — batch save credited = 'y'
+        usingServiceRepo.saveAll(toCredit);
+
+        // Step 4 — deduct credits
+        int deductCount = toCredit.size();
         subscriptionRepo.findByUserId(userId).ifPresent(sub -> {
-            sub.setCredits(Math.max(0, sub.getCredits() - x));
+            int before = sub.getCredits();
+            sub.setCredits(Math.max(0, before - deductCount));
             subscriptionRepo.save(sub);
+            log.info("algo1[{}]: {} orders credited, credits {} -> {}",
+                    userId, deductCount, before, sub.getCredits());
         });
 
-        log.info("algo1[{}]: {} credited, {} deducted, {} pages scanned", userId, x, x, page);
-        return x;
+        return deductCount;
     }
+
+    // ── Save grabbed order ────────────────────────────────────────────────────
 
     @Transactional
     public void saveGrabbedOrder(String userId, String orderId) {
@@ -123,6 +119,8 @@ public class SubscriptionService {
         e.setCredited("n");
         usingServiceRepo.save(e);
     }
+
+    // ── Coupon redemption ─────────────────────────────────────────────────────
 
     @Transactional
     public Map<String, Object> redeemCoupon(String userId, String couponCode) {

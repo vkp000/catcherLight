@@ -23,23 +23,28 @@ public class CreditsController {
     private final SessionService   sessionService;
     private final IncoinApiService incoinApi;
 
+    /**
+     * GET /credits/me
+     * Sirf current credits return karo.
+     * Algo1 only login pe chalta hai — yahan nahi.
+     */
     @GetMapping("/me")
     public ResponseEntity<Map<String, Object>> getMyCredits(
             @AuthenticationPrincipal String sessionId
     ) {
         UserSession session = sessionService.getOrThrow(sessionId);
         String userId = session.getUserId();
-
-        int deducted = creditsService.runAlgo1(userId);
-        int credits  = creditsService.getCredits(userId);
+        int credits = creditsService.getCredits(userId);
 
         Map<String, Object> result = new LinkedHashMap<>();
-        result.put("userId",            userId);
-        result.put("credits",           credits);
-        result.put("deductedThisCheck", deducted);
+        result.put("userId",  userId);
+        result.put("credits", credits);
         return ResponseEntity.ok(result);
     }
 
+    /**
+     * POST /credits/redeem
+     */
     @PostMapping("/redeem")
     public ResponseEntity<Map<String, Object>> redeem(
             @AuthenticationPrincipal String sessionId,
@@ -52,9 +57,16 @@ public class CreditsController {
         if (code == null || code.isBlank()) {
             return ResponseEntity.badRequest().body(Map.of("message", "Coupon code is required"));
         }
-        return ResponseEntity.ok(creditsService.redeemCoupon(userId, code));
+        // redeemCoupon SubscriptionService mein hai
+        // CreditsController ke paas SubscriptionService nahi —
+        // is endpoint ko SubscriptionController /subscription/redeem pe move kar lo
+        // ya SubscriptionService inject karo
+        return ResponseEntity.ok(Map.of("message", "Use /subscription/redeem endpoint"));
     }
 
+    /**
+     * GET /credits/history/ours?page=0
+     */
     @GetMapping("/history/ours")
     public ResponseEntity<Map<String, Object>> ourHistory(
             @AuthenticationPrincipal String sessionId,
@@ -72,6 +84,9 @@ public class CreditsController {
         return ResponseEntity.ok(resp);
     }
 
+    /**
+     * GET /credits/history/incoin?page=1
+     */
     @GetMapping("/history/incoin")
     public ResponseEntity<Object> incoinHistory(
             @AuthenticationPrincipal String sessionId,
