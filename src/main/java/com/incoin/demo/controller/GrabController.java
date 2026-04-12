@@ -7,7 +7,6 @@ import com.incoin.demo.model.GrabState;
 import com.incoin.demo.model.UserSession;
 import com.incoin.demo.service.IncoinApiService;
 import com.incoin.demo.service.SessionService;
-//import com.incoin.demo.db.service.SubscriptionService;
 import com.incoin.demo.service.SubscriptionService;
 import com.incoin.demo.service.WorkerService;
 import jakarta.validation.Valid;
@@ -21,68 +20,43 @@ import org.springframework.web.server.ResponseStatusException;
 import java.util.List;
 import java.util.Map;
 
-/**
- * All grab-related endpoints.
- * Every endpoint requires a valid JWT (enforced by SecurityConfig).
- */
 @RestController
 @RequestMapping("/grab")
 @RequiredArgsConstructor
 public class GrabController {
 
-    private final SessionService   sessionService;
-    private final IncoinApiService incoinApi;
+    private final SessionService      sessionService;
+    private final IncoinApiService    incoinApi;
     private final WorkerService       workerService;
-    private final com.incoin.demo.service.SubscriptionService subscriptionService;
+    private final SubscriptionService subscriptionService;
 
-    // ── Tools ─────────────────────────────────────────────────────────────────
-
-    /**
-     * GET /grab/tools
-     * Returns eligible UPI tools for this user from Incoin.
-     */
     @GetMapping("/tools")
     public ResponseEntity<List<Map<String, Object>>> getTools(
-            @AuthenticationPrincipal String userId
+            @AuthenticationPrincipal String sessionId
     ) {
-        UserSession session = sessionService.getOrThrow(userId);
+        UserSession session = sessionService.getOrThrow(sessionId);
         return ResponseEntity.ok(incoinApi.getTools(session));
     }
 
-    /**
-     * POST /grab/tool
-     * Persist the user's tool choice in their session.
-     *
-     * Body: { "upiAddr": "...", "toolType": "...", "toolName": "..." }
-     */
     @PostMapping("/tool")
     public ResponseEntity<Void> selectTool(
-            @AuthenticationPrincipal String userId,
+            @AuthenticationPrincipal String sessionId,
             @Valid @RequestBody SelectToolRequest req
     ) {
-        UserSession session = sessionService.getOrThrow(userId);
+        UserSession session = sessionService.getOrThrow(sessionId);
         session.setSelectedUpiAddr(req.getUpiAddr());
         session.setSelectedToolType(req.getToolType());
         session.setSelectedToolName(req.getToolName());
-        sessionService.save(session, userId);
+        sessionService.save(session, sessionId);
         return ResponseEntity.ok().build();
     }
 
-    // ── Start / Stop ──────────────────────────────────────────────────────────
-
-    /**
-     * POST /grab/start
-     * Launches a background grab loop for this user.
-     * Non-blocking: returns immediately, loop runs in a separate thread.
-     *
-     * Body: { "minAmount": 400, "maxAmount": 500, "target": 3 }
-     */
     @PostMapping("/start")
     public ResponseEntity<Void> start(
-            @AuthenticationPrincipal String userId,
+            @AuthenticationPrincipal String sessionId,
             @Valid @RequestBody StartGrabRequest req
     ) {
-        UserSession session = sessionService.getOrThrow(userId);
+        UserSession session = sessionService.getOrThrow(sessionId);
 
         if (session.getSelectedUpiAddr() == null || session.getSelectedUpiAddr().isBlank()) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
@@ -93,43 +67,27 @@ public class GrabController {
                     "minAmount must be less than maxAmount.");
         }
 
-        // Credits check — must have credits > 0 to grab
         int credits = subscriptionService.getCredits(session.getUserId());
         if (credits <= 0) {
             throw new ResponseStatusException(HttpStatus.PAYMENT_REQUIRED,
                     "No credits remaining. Please redeem a coupon.");
         }
 
-        workerService.startGrab(userId,
+        // sessionId passed — WorkerService uses it as Redis key
+        workerService.startGrab(sessionId,
                 new GrabConfig(req.getMinAmount(), req.getMaxAmount(), req.getTarget()));
-
         return ResponseEntity.ok().build();
     }
 
-    /**
-     * POST /grab/stop
-     * Signals the running loop to stop. Returns immediately.
-     */
     @PostMapping("/stop")
-    public ResponseEntity<Void> stop(@AuthenticationPrincipal String userId) {
-        workerService.stopGrab(userId);
+    public ResponseEntity<Void> stop(@AuthenticationPrincipal String sessionId) {
+        workerService.stopGrab(sessionId);
         return ResponseEntity.ok().build();
     }
 
-    // ── Status ────────────────────────────────────────────────────────────────
-
-    /**
-     * GET /grab/status
-     * Returns the current GrabState for this user.
-     * Frontend can poll this every 2 s, or use WebSocket instead.
-     *
-     * Response: { status, grabbed, target, minAmount, maxAmount, running, logs[] }
-     */
     @GetMapping("/status")
-    public ResponseEntity<GrabState> status(
-            @AuthenticationPrincipal String userId
-    ) {
-        UserSession session = sessionService.getOrThrow(userId);
+    public ResponseEntity<GrabState> status(@AuthenticationPrincipal String sessionId) {
+        UserSession session = sessionService.getOrThrow(sessionId);
         return ResponseEntity.ok(session.getGrabState());
     }
 }

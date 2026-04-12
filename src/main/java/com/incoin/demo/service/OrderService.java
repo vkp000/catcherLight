@@ -6,29 +6,21 @@ import org.springframework.stereotype.Service;
 
 import java.util.Map;
 
-/**
- * Thin facade over IncoinApiService for order-specific operations.
- * Keeps controller code minimal.
- */
 @Service
 @RequiredArgsConstructor
 public class OrderService {
 
-    private final SessionService   sessionService;
     private final IncoinApiService incoinApi;
 
-    public Map<String, Object> getDetail(String userId, String orderId) {
-        UserSession session = sessionService.getOrThrow(userId);
+    public Map<String, Object> getDetail(UserSession session, String orderId) {
         return incoinApi.getOrderDetail(session, orderId);
     }
 
-    public boolean markPaid(String userId, String orderId) {
-        UserSession session = sessionService.getOrThrow(userId);
+    public boolean markPaid(UserSession session, String orderId) {
         return incoinApi.markPaid(session, orderId);
     }
 
-    public boolean cancel(String userId, String orderId, String reason) {
-        UserSession session = sessionService.getOrThrow(userId);
+    public boolean cancel(UserSession session, String orderId, String reason) {
         return incoinApi.cancelOrder(session, orderId, reason);
     }
 }
